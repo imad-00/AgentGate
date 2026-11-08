@@ -1,0 +1,56 @@
+allowed_paths:
+  - "sandbox/"
+
+allowed_domains:
+  - "example.com"
+  - "devtools-ci.io"
+
+forbidden_shell_patterns:
+  - "curl.*\\|.*bash"
+  - "wget.*\\|.*sh"
+  - "base64\\s+-d.*\\|\\s*(bash|sh)"
+  - "\\|\\s*(bash|sh)\\s*$"
+  # forces writes through write_file (where content is checked) instead of
+  # raw shell redirection. Generalized beyond the old literal ">sandbox/":
+  # run_shell now executes with cwd=sandbox, so a bare `echo x > f` lands in
+  # the sandbox too without ever containing that substring. /dev/null and
+  # fd-duplication (2>&1) are excluded since they're harmless, ubiquitous idioms.
+  - ">{1,2}\\s*(?!/dev/null\\b)(?!&[0-9])\\S"
+  - "rm -rf"
+  - "/etc/shadow"
+  # SSH key material — prefix-agnostic so `~/.ssh`, `$HOME/.ssh`,
+  # `/home/x/.ssh`, and `../../.ssh` (dot-dot traversal) are all caught,
+  # not just the literal tilde form.
+  - "\\.ssh(/|\\b)"
+  - "\\bid_rsa\\b"
+  - "\\bid_ed25519\\b"
+  - "\\bid_ecdsa\\b"
+  - "\\bauthorized_keys\\b"
+  # raw socket / exfiltration channels that bypass the http_request /
+  # run_shell URL-based domain allowlist entirely (no http:// string to match)
+  - "\\bnc\\b"
+  - "\\bnetcat\\b"
+  - "\\btelnet\\b"
+  - "/dev/(tcp|udp)/"
+
+# Any text matching one pattern from EACH list is blocked, regardless of how
+# the fetch and execution are joined (piped, saved-then-run, separate lines,
+# etc.) — closes the bypass where rephrasing `curl ... | bash` as
+# `curl ... > f; bash f` dodges the literal forbidden_shell_patterns above.
+fetch_patterns:
+  - "\\bcurl\\b"
+  - "\\bwget\\b"
+
+exec_patterns:
+  # negative lookbehind for a preceding "." so a *filename extension*
+  # (setup.sh, build.bash) doesn't falsely count as invoking the sh/bash
+  # interpreter — a real invocation is preceded by whitespace/start/operator,
+  # never a dot.
+  - "(?<!\\.)\\bbash\\b"
+  - "(?<!\\.)\\bsh\\b"
+  - "\\bsudo\\b"
+  - "\\bpython[0-9.]*\\b"
+  - "chmod\\s+\\+x"
+
+rate_limit:
+  max_calls_per_minute: 10
